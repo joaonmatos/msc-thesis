@@ -1,0 +1,54 @@
+\chapter{Introduction} \label{chap:intro}
+
+\section*{}
+
+Modern compiled software is written in languages, such as C and C++, that allow the author to abstract themselves away from the implementation details of the machine or lower level abstractions, and focus on properly encoding the functional requirements of their application. However, to do so, we rely on modern compilation toolchains, such as LLVM and GCC, to optimize our programs and ensure they satisfy non-functional requirements such as performance and efficiency.
+
+Moreover, developers usually expect that these transformations are applied automatically, or by supplying minimal amounts of configuration. Developers usually choose a level of optimization along a scale that balances a trade-off between compilation times and the number or complexity of performed optimizations, or, in rarer and more advanced cases, might manually enable or disable certain optimizations, or insert directives in the source-code to guide the compiler.
+
+\section{Context} \label{sec:context}
+
+Generally, \textit{compilers} are tools that read code, usually written in a high-level, human-readable language, and translate the code to another language, usually low-level and for machines (e.g. machine code, byte-code). Compilers can apply a number of transformations during translation, to meet certain objectives, usually on a intermediate representation (IR), that lowers the code from language-specific constructs but that abstracts away platform-dependent concepts.\cite{LattnerAOSA} \textit{Optimizing compilers} focus especially on transformations that improve the code's performance and efficiency characteristics.
+
+These transformations can be classified as \textit{optimizations}, which directly contribute to improving the programs' performance, and/or \textit{enabling transformations}, which, irrespective of their direct performance impact, might enable or facilitate further optimizations. An example of an optimization is constant folding, which directly reduces the amount of work done at run time, and an example of an enabling transformation is function inlining, which may or may not improve performance, but has the further effect of enabling further optimizations across function boundaries.
+
+\textit{Source-to-source compilers} are compilers whose output, instead of being low-level code, is code in the same or a different, but still high-level, human-readable language (in this case they are commonly named \textit{transpilers}). Clava is a source-to-source compiler, developed at FEUP and based on the LARA framework and Clang, that supports the use of a Javascript-based domain specific language (DSL) to transform C and C++ programs, by manipulating their Abstract Syntax Trees (ASTs).
+
+\section{Motivation} \label{sec:motivation}
+
+To research, prototype, and implement novel compilation techniques, the traditional approach has been for researchers to extend existing compilers and implement transformation passes on their low-level IR. This process presents a number of challenges:
+
+\begin{enumerate}
+    \item Because the compiler IRs have a lower level of abstraction, the researcher meets a higher learning curve when performing their work, because they must represent their transformation in terms of those low-level primitives instead of the semantics of the target language. Furthermore, some semantic details of the high-level language that might be useful in performing the transformation are frequently lost in translation to the low-level IR, or are only recovered after performing complex analysis of the low-level code \cite{Zangerl2018}.
+    \item The low level of abstraction of the most used IRs (e.g., LLVM-IR \cite{Lattner2004}) ties the effort to a specific computing model, e.g. the von Neumann machine, even when the semantics of the transformation are applicable to a larger range of computing models, if encoded in terms of the high-level language \cite{Lattner2021}.
+    \item Because each compiler tends to have its own Intermediate Representation, supporting transformations that have been encoded in terms of one IR to another compiler toolchain requires non-trivial porting and duplication of effort. This means that custom compiler passes become tied to a specific compiler.
+    \item Often it is not feasible to modify the compiler. This may be a practical issue, e.g. because modifications must be either coordinated with upstream developers or a separate fork must be maintained over an extended period of time, or a regulatory issue: some projects, such as those in the automotive industry, may need to use certified compilers that need to be kept deliberately simple, or the cost of certifying those transformations is prohibitive.
+\end{enumerate}
+
+A complementary approach that has been proposed to address these issues is the use of source-to-source compilers as the first step in the compilation toolchain. By encoding the semantics of the transformation in terms of the source language, challenges 1 and 2 are adddressed, since the semantic model of the the original source code is preserved, and is not restricted to a specific target architecture. By generating as the output a program in the source language, challenges 3 and 4 are addressed, since the ability to reuse the underlying compilation infrastructure is preserved, and existing optimization work can be re-purposed.
+
+However, this approach is not without caveats. The most important of these is that a high-level language, by design, presents an extensive set of syntactical and semantic constructs, which, by confronting the compiler developers with an increasing number of semantic primitives and an explosion of the number of interactions between them, increasingly requires more complex analyses.
+
+To control this complexity, compiler developers have begun implementing multiple tiers of IRs, which aim to balance different levels of expressibility (higher-level abstractions) and parsimony (lower-level primitives). However, this approach of restricting the semantics of the language to a subset by \textit{construction} eschews the ease-of-use benefits of source-to-source compilation, by requiring compiler developers to work with even more models and languages.
+
+Our work presents an alternative approach that can be taken, specifically within the context of a source-to-source compiler. We present a technique to simplify the high-level language by a process of \textit{subtraction}. This process exploits the wealth of primitives present in the high-level language, by rewriting specialized language constructs in terms of their more general counterparts. That way, we are left with a simpler program, still in the source language, that can be confidently targeted by simpler analyses and transformations.
+
+\section{Objectives} \label{sec:objectives}
+
+Taking into account the context and our motivation, we set out with three research questions:
+
+\begin{enumerate}
+    \item What are the techniques that are used, both traditionally and in recent developments, to manage the complexity of program representations and enable analysis and optimization work?
+    \item What is the minimum subset of the C and C++ languages that allow an expressive representation of programs, while being more amenable to program analysis and transformation in a source-to-source compilation environment, such as Clava?
+    \item Can an optimization be prototyped, following the normalization of programs to this subset, that produces measurable effects on their non-functional characteristics, namely performance?
+\end{enumerate}
+
+\section{Document Structure} \label{sec:struct}
+
+In this first chapter, Chapter~\ref{chap:intro}, we discuss the context in which the work is undertaken, the motivation, and its expected objectives.
+Chapters \ref{chap:sota-bg} and \ref{chap:sota-lit} discuss the state of the art that is relevant to provide context to the work. Chapter \ref{chap:sota-bg} provides the background needed to understand this work, namely discussing the architecture that compiler engineers have developed to streamline the process of supporting compilation and program transformation while simultaneously targeting multiple source languages and target platforms, and categorizing the scope and nature of code analyses and transformations. Having this background in mind, as well as the challenges to traditional approaches that were described in Chapter \ref{chap:intro}, we go over and summarise what other approaches have been taken to solve these problems, including approaches based on constructing IRs with different levels of abstraction, and earlier contributions that precede our work.
+Chapter \ref{chap:gen_approach} details the general approach that we have taken to architect, implement, validate and evaluate our proposed solution.
+Chapter \ref{chap:subset} describes the theoretical framework that we developed to guide our language normalization effort, and enumerates the analyses and normalization steps that we derived and implemented based on that framework.
+Chapter \ref{chap:inlining} details a case study that we developed to validate our normalization approach, contributing a source-to-source function inlining transformation that is able to leverage the normalized subset to inline functions in cases where it would not be possible before.
+In Chapter \ref{chap:evaluation} we present three experiments that we performed to evaluate the enabling effects of our normalization transformations and the performance and enabling effects of our inlining transformation, and discuss the results we obtained.
+In Chapter \ref{chap:conclusions} we summarize our contributions and results, discuss the outcomes of our work, and reflect on the shortcomings of our contributions, proposing possible avenues to be explored in future works.

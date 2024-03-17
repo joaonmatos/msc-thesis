@@ -1,0 +1,525 @@
+\chapter{Validation and Benchmarking: Experimental Setup and Codes} \label{ap:validation}
+
+To perform the validation of our technique, tests were run on a workstation with the following configuration:
+
+\begin{itemize}
+    \item CPU - AMD Ryzen Threadripper 3960X - 24 Cores with 2-way SMT, clocked at 2.2GHz, boosting to 4.5GHz
+    \item RAM - 2x16 GiB at 3200 MT/s, in dual channel
+    \item OS - Ubuntu 18.04.6 LTS
+    \item Java - Azul Systems Zulu OpenJDK 11.0.5
+    \item Compilers - clang v6.0.0 (experiment B), CompCert v3.10 (Coq platform v2022.04.1) (experiment B), gcc v7.5.0 (experiments B and C)
+    \item Clava - built from source, commit 275e87b
+    \item LARA Framework - built from source, commit 81bf5b62
+    \item SPeCS Java Libraries - built from source, commit fa827db5
+\end{itemize}
+
+To build Clava from source, the repositories for Clava, the \href{https://github.com/specs-feup/lara-framework/tree/81bf5b624b0aa37ddd0bebda2b24e2a126f12609}{LARA Framework} and the \href{https://github.com/specs-feup/specs-java-libs/tree/fa827db586d7b2cbf94fff98873ee339f04cb694}{SPeCS Java Libraries} were cloned and imported into the Eclipse IDE, according to the instructions in the \href{https://github.com/specs-feup/specs-java-libs/blob/fa827db586d7b2cbf94fff98873ee339f04cb694/README.md}{SPeCS Java Libraries README file}, and the build target ClavaWeaver -> Java Application -> ClavaWeaverLauncher -> ClavaWeaverGUI was used to run the Clava toolchain.
+
+\section{Experiment A}
+
+\subsection{C Source Codes}
+
+\subsubsection{K-Means}
+
+Randomly distributes points around a set of pre-defined seed coordinates, and runs k-means to find clusters of points.
+
+\begin{lstlisting}[caption=k\_means.c]
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+float square_distance(float x1, float y1, float x2, float y2)
+{
+    float x_diff = (x1 - x2) * (x1 - x2);
+    float y_diff = (y1 - y2) * (y1 - y2);
+    float result = x_diff + y_diff;
+    return result;
+}
+
+void calculate_centroid_means(size_t n_clusters, size_t gen_factor, float *centroid_xs, float *centroid_ys, size_t *centroid_counts, float *xs, float *ys, size_t *classes)
+{
+    // reset centroid means
+    for (size_t k = 0; k < n_clusters; k++)
+    {
+        centroid_xs[k] = 0.0;
+        centroid_ys[k] = 0.0;
+        centroid_counts[k] = 0;
+    }
+
+    // update centroid means
+    for (size_t i = 0; i < n_clusters * gen_factor; i++)
+    {
+        float x = xs[i];
+        float y = ys[i];
+        size_t k = classes[i];
+
+        centroid_counts[k]++;
+        centroid_xs[k] += (x - centroid_xs[k]) / centroid_counts[k];
+        centroid_ys[k] += (y - centroid_ys[k]) / centroid_counts[k];
+    }
+}
+
+int main()
+{
+    size_t n_clusters = 8;
+    float cluster_seed_xs[8];
+    cluster_seed_xs[0] = 3.0;
+    cluster_seed_xs[1] = -2.1;
+    cluster_seed_xs[2] = 12.8;
+    cluster_seed_xs[3] = 0.3;
+    cluster_seed_xs[4] = -7.5;
+    cluster_seed_xs[5] = 16.2;
+    cluster_seed_xs[6] = -13.1;
+    cluster_seed_xs[7] = -0.7;
+    float cluster_seed_ys[8];
+    cluster_seed_ys[0] = 3.0;
+    cluster_seed_ys[1] = 2.1;
+    cluster_seed_ys[2] = -12.8;
+    cluster_seed_ys[3] = -0.3;
+    cluster_seed_ys[4] = 7.5;
+    cluster_seed_ys[5] = 16.2;
+    cluster_seed_ys[6] = -13.1;
+    cluster_seed_ys[7] = -0.7;
+
+    size_t allowed_switches = 2;
+    size_t gen_factor = 150000;
+    int dist_factor = 300;
+
+    srand(42);
+
+    float *xs = calloc(n_clusters * gen_factor, sizeof(float));
+    float *ys = calloc(n_clusters * gen_factor, sizeof(float));
+    size_t *classes = calloc(n_clusters * gen_factor, sizeof(size_t));
+
+    // randomly distribute points around seed clusters
+    for (size_t k = 0; k < n_clusters; k++)
+    {
+        size_t base = k * gen_factor;
+        float cluster_x = cluster_seed_xs[k];
+        float cluster_y = cluster_seed_ys[k];
+        for (size_t offset = 0; offset < gen_factor; offset++)
+        {
+            size_t ix = base + offset;
+            float x_delta = (rand() % (dist_factor * 2) - dist_factor) / (float)100;
+            xs[ix] = cluster_x + x_delta;
+            float y_delta = (rand() % (dist_factor * 2) - dist_factor) / (float)100;
+            ys[ix] = cluster_y + y_delta;
+            classes[ix] = rand() % n_clusters;
+        }
+    }
+
+    // randomly distribute classes
+    for (size_t i = 0; i < n_clusters * gen_factor; i++)
+    {
+        int class = rand() % n_clusters;
+        classes[i] = class;
+    }
+
+    float centroid_xs[8];
+    float centroid_ys[8];
+    size_t centroid_counts[8];
+
+    size_t switched_observations = 0;
+    int iterations = 0;
+
+    clock_t start, end;
+    start = clock();
+    do
+    {
+        switched_observations = 0;
+        iterations++;
+        calculate_centroid_means(n_clusters, gen_factor, centroid_xs, centroid_ys, centroid_counts, xs, ys, classes);
+        for (size_t i = 0; i < n_clusters * gen_factor; i++)
+        {
+            float x = xs[i];
+            float y = ys[i];
+            size_t class = classes[i];
+
+            for (size_t k = 0; k < n_clusters; k++)
+            {
+                float centroid_x = centroid_xs[k];
+                float centroid_y = centroid_ys[k];
+                float centroid_distance = square_distance(x, y, centroid_x, centroid_y);
+
+                float class_x = centroid_xs[class];
+                float class_y = centroid_ys[class];
+                float class_distance = square_distance(x, y, class_x, class_y);
+
+                if (centroid_distance < class_distance)
+                {
+                    class = k;
+                }
+
+                if (class != classes[i])
+                {
+                    classes[i] = class;
+                    switched_observations++;
+                }
+            }
+        }
+    } while (switched_observations > allowed_switches);
+    end = clock();
+    fprintf(stderr, "%d\n", iterations);
+    printf("%f\n", (end - start) / (double)(CLOCKS_PER_SEC / 1000));
+}
+\end{lstlisting}
+
+\subsubsection{Matrix Multiplication and Trace}
+
+Pre-populates two square matrices of similar rank, multiplies them, and gives the trace of the resulting matrix.
+
+\begin{lstlisting}[caption=matrix\_mult.c]
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <stdbool.h>
+
+typedef struct matrix
+{
+    size_t side;
+    double **rows;
+} matrix;
+
+matrix *matrix_new(size_t sqrt_n)
+{
+    size_t side = sqrt_n * sqrt_n;
+    double **rows = calloc(side, sizeof(double *));
+
+    for (size_t row = 0; row < side; row++)
+    {
+        double *r = calloc(side, sizeof(double));
+        rows[row] = r;
+    }
+
+    matrix *out = (matrix *)malloc(sizeof(matrix));
+    out->side = side;
+    out->rows = rows;
+
+    return out;
+}
+
+void matrix_destroy(matrix *m)
+{
+    double **rows = m->rows;
+
+    for (size_t row = 0; row < m->side; row++)
+    {
+        free(rows[row]);
+    }
+
+    free(rows);
+    free(m);
+}
+
+double matrix_mult_coord(matrix *a, matrix *b, size_t i, size_t j)
+{
+    double acc = 0.0;
+
+    for (size_t k = 0; k < a->side; k++)
+    {
+        acc += a->rows[i][k] * b->rows[k][j];
+    }
+
+    return acc;
+}
+
+void matrix_mult(matrix *a, matrix *b, matrix *out)
+{
+    size_t side = a->side;
+
+    for (size_t i = 0; i < side; i++)
+    {
+        for (size_t j = 0; j < side; j++)
+        {
+            out->rows[i][j] = matrix_mult_coord(a, b, i, j);
+        }
+    }
+}
+
+void matrix_fill_rand(matrix *m)
+{
+    for (size_t i = 0; i < m->side; i++)
+    {
+        for (size_t j = 0; j < m->side; j++)
+        {
+            m->rows[i][j] = ((double)rand()) / 100.0;
+        }
+    }
+}
+
+double matrix_trace(matrix *m)
+{
+    double trace = 0.0;
+
+    for (size_t i = 0; i < m->side; i++)
+    {
+        trace += m->rows[i][i];
+    }
+
+    return trace;
+}
+
+int main(void)
+{
+    srand(42);
+
+    matrix *m1 = matrix_new(35);
+    matrix *m2 = matrix_new(35);
+    matrix *out = matrix_new(35);
+
+    matrix_fill_rand(m1);
+    matrix_fill_rand(m2);
+
+    clock_t start = clock();
+    matrix_mult(m1, m2, out);
+    clock_t end = clock();
+    printf("%f\n", (end - start) / (double)(CLOCKS_PER_SEC / 1000));
+    double trace = matrix_trace(out);
+    fprintf(stderr, "%f\n", trace);
+
+    return EXIT_SUCCESS;
+}
+\end{lstlisting}
+
+\subsection{Array Slice Aggregations}
+
+Pre-populates a fixed array with random non-negative integers, and aggregates them.
+
+\begin{lstlisting}[caption=vec\_multiple\_returns.c]
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+int *slice_new(size_t size)
+{
+    return (int *)calloc(size, sizeof(int));
+}
+
+void slice_rand_fill(int *slice, size_t size)
+{
+    for (size_t i = 0; i < size; i++)
+    {
+        slice[i] = rand();
+    }
+}
+
+int *slice_ref(int *slice, size_t size, size_t offset)
+{
+    if (offset >= size)
+    {
+        return NULL;
+    }
+    return slice + offset;
+}
+
+size_t slice_size(int *slice, size_t size)
+{
+    return size;
+}
+
+int main()
+{
+    srand(42);
+
+    size_t size = 1000000000;
+    int *slice = slice_new(size);
+    slice_rand_fill(slice, size);
+
+    unsigned int acc = 0;
+
+    clock_t start = clock();
+    for (size_t i = 0; i < slice_size(slice, size); i++)
+    {
+        int *elem;
+        elem = slice_ref(slice, size, i);
+        acc += (unsigned int)*elem;
+        acc *= (unsigned int)*elem;
+        acc += (unsigned int)*elem;
+        acc *= (unsigned int)*elem;
+        acc *= acc;
+        acc += (unsigned int)*elem;
+        acc *= (unsigned int)*elem;
+        acc += (unsigned int)*elem;
+        acc *= (unsigned int)*elem;
+    }
+    clock_t end = clock();
+    fprintf(stderr, "%u\n", acc);
+
+    printf("%f\n", (end - start) / (double)(CLOCKS_PER_SEC / 1000));
+    return EXIT_SUCCESS;
+}
+\end{lstlisting}
+
+\subsection{Clava Scripts}
+
+These Clava scripts try to inline all possible calls in a given set of source-files, determined by the Clava config file, and report statistics about the inlinings.
+
+\begin{lstlisting}[language=js,caption=Clava built-in inlining with no normalization]
+laraImport("clava.code.Inliner");
+laraImport("weaver.Query");
+
+let calls_total = 0;
+let calls_no_definition = 0;
+let calls_inlined = 0;
+let calls_inlining_fails = 0;
+
+const inliner = new Inliner();
+
+for (const call of Query.search("call")) {
+  calls_total += 1;
+  if (!call.function.isImplementation) {
+    calls_no_definition += 1;
+    continue;
+  }
+  try {
+    println(
+      `Trying to inline call '${call.code}' at location ${call.location}`
+    );
+    call.inline();
+    println("Inlined successfully\n");
+    calls_inlined += 1;
+  } catch (e) {
+    println(`Inlining failed: ${e.message}\n`);
+    calls_inlining_fails += 1;
+  }
+}
+
+println("Results:");
+println(
+  JSON.stringify(
+    { calls_total, calls_no_definition, calls_inlined, calls_inlining_fails },
+    undefined,
+    2
+  )
+);
+\end{lstlisting}
+
+\begin{lstlisting}[language=js,caption=Clava built-in inlining with normalization]
+laraImport("clava.code.Inliner");
+laraImport("weaver.Query");
+laraImport("clava.opt.NormalizeToSubset");
+laraImport("clava.opt.PrepareForInlining");
+
+let calls_total = 0;
+let calls_no_definition = 0;
+let calls_inlined = 0;
+let calls_inlining_fails = 0;
+
+NormalizeToSubset();
+
+for (const call of Query.search("call")) {
+  calls_total += 1;
+  if (!call.function.isImplementation) {
+    calls_no_definition += 1;
+    continue;
+  }
+  try {
+    println(
+      `Trying to inline call '${call.code}' at location ${call.location}`
+    );
+    PrepareForInlining(call.function);
+    call.inline();
+    println("Inlined successfully\n");
+    calls_inlined += 1;
+  } catch (e) {
+    println(`Inlining failed: ${e.message}\n`);
+    calls_inlining_fails += 1;
+  }
+}
+
+println("Results:");
+println(
+  JSON.stringify(
+    { calls_total, calls_no_definition, calls_inlined, calls_inlining_fails },
+    undefined,
+    2
+  )
+);
+\end{lstlisting}
+
+\begin{lstlisting}[language=js,caption=Newly developed inlining with no normalization]
+laraImport("clava.code.Inliner");
+laraImport("weaver.Query");
+
+let calls_total = 0;
+let calls_no_definition = 0;
+let calls_inlined = 0;
+let calls_inlining_fails = 0;
+
+const inliner = new Inliner();
+
+for (const call of Query.search("call")) {
+  calls_total += 1;
+  if (!call.function.isImplementation) {
+    calls_no_definition += 1;
+    continue;
+  }
+  try {
+    println(
+      `Trying to inline call '${call.code}' at location ${call.location}`
+    );
+    const exprStmt = call.ancestor("exprStmt");
+    inliner.inline(exprStmt);
+    println("Inlined successfully\n");
+    calls_inlined += 1;
+  } catch (e) {
+    println(`Inlining failed: ${e.message}\n`);
+    calls_inlining_fails += 1;
+  }
+}
+
+println("Results:");
+println(
+  JSON.stringify(
+    { calls_total, calls_no_definition, calls_inlined, calls_inlining_fails },
+    undefined,
+    2
+  )
+);
+\end{lstlisting}
+
+\begin{lstlisting}[language=js,caption=Newly developed inlining with normalization]
+laraImport("clava.code.Inliner");
+laraImport("weaver.Query");
+laraImport("clava.opt.NormalizeToSubset");
+laraImport("clava.opt.PrepareForInlining");
+
+let calls_total = 0;
+let calls_no_definition = 0;
+let calls_inlined = 0;
+let calls_inlining_fails = 0;
+
+NormalizeToSubset();
+
+const inliner = new Inliner();
+
+for (const call of Query.search("call")) {
+  calls_total += 1;
+  if (!call.function.isImplementation) {
+    calls_no_definition += 1;
+    continue;
+  }
+  try {
+    println(
+      `Trying to inline call '${call.code}' at location ${call.location}`
+    );
+    PrepareForInlining(call.function);
+    const exprStmt = call.ancestor("exprStmt");
+    inliner.inline(exprStmt);
+    println("Inlined successfully\n");
+    calls_inlined += 1;
+  } catch (e) {
+    println(`Inlining failed: ${e.message}\n`);
+    calls_inlining_fails += 1;
+  }
+}
+
+println("Results:");
+println(
+  JSON.stringify(
+    { calls_total, calls_no_definition, calls_inlined, calls_inlining_fails },
+    undefined,
+    2
+  )
+);
+\end{lstlisting}

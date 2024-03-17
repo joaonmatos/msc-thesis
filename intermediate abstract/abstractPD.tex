@@ -1,0 +1,60 @@
+\documentclass[11pt,a4paper]{article}
+
+%\usepackage[portuguese]{babel}  % if you want Portuguese
+\usepackage[utf8]{inputenc}           % 8 bits UTF8
+%\usepackage[latin1]{inputenc}     %  OR 8 bits latin1
+\usepackage{parskip}            % no indentation on paragraphs
+\usepackage{url}                % URLs
+\usepackage{lipsum}             % loren dummy text
+
+%% margins
+\RequirePackage[outer=25mm,inner=30mm,vmargin=16mm,includehead,includefoot,headheight=15pt]{geometry}
+
+%% headers and footers
+\usepackage{fancyhdr}           % page headers
+\pagestyle{fancy}
+\lhead{}\chead{}\rhead{PD 2021/2022 Sem 1}
+%\lfoot{}\cfoot{}\rfoot{Page \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\pagenumbering{gobble}
+
+%% some more macros
+\newcommand{\dummy}[1]{$<$#1$>$}
+\newcommand{\titles}[2]{\noindent\textbf{#1:} #2\\[2mm]}
+
+%% LaTeX exceptions
+%\hyphenation{In-fra-struc-ture}
+
+\begin{document}
+
+\titles{Title}{\dummy{Automatic C/C++ source-code normalization and optimization}}
+\titles{Author}{\dummy{João Nuno Carvalho de Matos}}
+\titles{Supervision}{\dummy{Prof. João Bispo}}
+\titles{Date}{\today}
+
+\section*{Abstract}
+
+Modern compiled software (e.g. C/C++) rely on complex compilation infrastructures (e.g. LLVM\cite{Lattner2004}) that apply several normalization and optimization passes to ensure that the resulting executable program achieves acceptable levels of performance. 
+Adding new passes usually implies extending the compiler. However, there are several drawbacks to this approach. There is a high-learning curve, compilers have different intermediate representations (IRs) that tie the effort to a specific compiler, and the IRs are sometimes not high-level enough for certain analyses.
+
+Using source-to-source compilers it is possible to directly analyze and transform the original source code\cite{Arabnejad2018}\cite{Bae2013}, making transformations portable across different compilers.
+Clava\cite{Bispo2020} supports scripts written in a Javascript-based Domain-Specific Language (DSL) to query and transform C and C++ source code, allowing rapid research and prototyping of source code transformations.
+
+In this work we will identify and catalog transformation passes that are currently used by compilers in low-level IRs, as well as their trade-offs and expected effects in terms of enabling of further optimizations.
+
+Then, we will use Clava to develop a set of transformations that will be applied at the source-code level, both enabling and optimizing, to validate this technique's feasibility and composability. The resulting programs will be benchmarked on a range of compilers, with and without optimization enabled, to evaluate the effects of the transformations developed.
+
+We expect that this work will enable further research into the development of optimizing transformations using different compilation approaches such as source-to-source compilers, that the optimizations we implement will effect performance gains, especially when combined with less popular and developed compilers, and that the enabling transformations we develop can be built upon to implement further optimizations as source-code transformation passes.
+
+\titles{Keywords}{\dummy{source-to-source compilers, source-code optimization, source-code normalization, LARA framework}}
+\titles{ACM Classification}{\dummy{Software and its engineering/Software notations and tools/Compilers}}
+
+\nocite{*}  % to include references which were not cited
+
+%% the references using BibTeX
+\bibliographystyle{unsrt}
+\bibliography{abstractBib}
+
+\end{document}

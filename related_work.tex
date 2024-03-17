@@ -1,0 +1,101 @@
+\chapter{Related Work}\label{chap:sota-lit}
+
+To meet the challenges presented in Section ~\ref{sec:motivation}, several distinct approaches have been proposed and developed.
+
+\section{Developments in IR-based optimization approaches}
+
+\subsection{Mid-level Intermediate Representations}\label{sec:midlevel-ir}
+
+As high-level languages have expanded their breadth to capture more semantic details, several compiler infrastructures have introduced their own IR between the high-level language, and AST, and the underlying optimizer, and its respective low-level IR.
+
+These representations generally work on an intermediate level of abstraction, in which the set of syntactic constructs is restricted, and the semantic details of the language are encoded, as opposed to being eliminated in the process of lowering to a low-level IR.
+
+Several of these approaches have been identified \cite{Lattner2021}:
+
+\begin{itemize}
+    \item The Rust compiler lowers the programs written in the language to their internal IR, MIR\cite{RustMirRfc}. This representation eliminates several syntax constructs to facilitate several analyses, such as liveness, death and reachibility checking, borrow checking (which implements Rust's static guarantees of memory safety), and guiding translation to the lower-level LLVM-IR.
+    \item The Swift compiler lowers the programs to the Swift Intermediate Language (SIL) \cite{SwiftSIL}, which they use to provide the following analyses: "A set of guaranteed high-level optimizations [...]. Diagnostic dataflow analysis passes that enforce Swift language requirements [...]. High-level optimization passes [...]. A stable distribution format that can be used to distribute 'fragile' inlineable or generic code with Swift library modules, to be optimized into client binaries."
+    \item The Julia compiler lowers the programs to a SSA-form representation \cite{JuliaIR} after performing macro inlining and other syntax simplification tasks, in order to perform middle-end optimization tasks.
+\end{itemize}
+
+While the intermediate level of abstraction might be appropriate for some optimizations, this approach is limited by several factors.
+
+Firstly, it still ties the optimization work to a single compiler implementation: whereas these languages have had their effort mostly concentrated on a single implementation (Swift compiler, \textit{rustc}, and the Julia compiler) and so are able to mitigate this disadvantage, other source languages, such as C and C++, have multiple compiler implementations, where this approach suffers from a fragmentation of effort.
+
+Moreover, this approach continues to necessitate a lowering of the level of abstraction, which might impede optimization efforts that depend on high-level details of the programming language. This effect is exacerbated when considering the use cases of finding optimizations for codes that make use of eDSLs or libraries \cite{Zangerl2018}.
+
+\subsection{MLIR: Declarative approach to defining and optimizing a Multi-Level Intermediate Representation}
+
+Another recent contribution in this space is MLIR \cite{Lattner2021}. This extension of the LLVM representation aims to deal with several deficiencies of that system's approach to compilation, namely shortcomings in dealing with heterogeneous targets and non-scalar data.
+
+To that end, it formalizes a system of intermediate representation with the following characteristics:
+
+\begin{itemize}
+    \item Ability to capture multiple levels of abstraction through the use of nested blocks of operations, and the use of attributes to capture semantic details of tagged code regions.
+    \item Separation of concerns between different translation passes through the definition of dialects, static traits and dynamic interfaces.
+    \item Ability to define schemas for non-scalar data.
+    \item Declarative approach to defining code transformations, including the ability to progressively and partially lower the abstraction level of code regions.
+\end{itemize}
+
+A practical example of this approach is the recently proposed Clang Intermediate Representation \cite{CirRfc} (CIR). This representation leverages MLIR's ability to define dialects and transformations within and between them to provide an intermediate language that does not necessarily rely on the syntactic constructs of the C and C++ languages, but allows important semantic concepts from these languages to be abstractly represented and reasoned about in analyses, before being morphed into other, and lower-level, IR dialects.
+
+While this approach might prove valuable in its stated goal of generalizing and driving a wide goal of compiler projects, the generic nature of the representation may worsen the ergonomics of developing code transformations. In particular, the transformation implementer must learn the semantics of the IR representation, which is constructed to support the semantics of the language but not derived from it, and how to perform transformations on it. In the case of MLIR, the implementer must, depending on the specifics of their transformation, implement the transformation in terms of an external DSL and Python bindings, or even may need to write out their transformation imperatively, using a C++ template-based system.
+
+In comparison, using source-to-source compilation allows us to provide a simpler development experience to users. By relying on the structure and semantics of widely supported high-level languages (C and C++), we are able to support a wide range of targets and assure the users that if they are able to implement the transformation on high-level code, they will be able to automate it. By relying on source-code normalization and simplification passes, we are able to provide a representation that is derived from the high-level language by subtraction, which can more immediately be understood (it is "just a simple C/C++"). Not only that, by providing an compiler interface embedded on, or embedding, an extremely popular and easy-to-use language such as Javascript, we are able to provide the optimization developers-to-be with a more ergonomic experience.
+
+\section{C Intermediate Language: Source-to-Source normalization of C code}
+
+Another work that is particularly relevant for this dissertation is the C Intermediate Language \cite{Necula2002}. This project is similar to, and can be in some ways considered to be a precursor of, our work, as it similarly recognizes that the C language has a wealth of complex constructs hampering a straightforward analysis process of source programs.
+
+To tackle this issue, it constructs a high-level representation that preserves most semantic aspects of the C source code, but simplifies several aspects of the language, including removing redundant constructs and syntactic sugar, making implicit casts explicit, and separating value evaluation, side-effect creation, and control-flow changes. It also incorporates a Control Flow Graph into the representation to make analyses relying on it simpler. After converting to this representation, it applies any transformations that the user has specified, using an embedded DSL in OCaml, and outputs the transformed program in C.
+
+As close as this approach may be to our work, there are still some different trade-offs between this approach and ours:
+
+\begin{itemize}
+    \item This approach still works by constructing a new representation that, while mapping closely to the source language, still is separate from it. While this allows for a significant transfer of domain knowledge compared to other IR-based approaches, it still is not as close to the source language as we desired. In comparison, our AST-based approach, which only subtracts elements that are deemed too complex, keeps a more faithful representation of the original program.
+    \item The language proposed by the authors eliminate some features, such as some kind of syntactic sugars (\verb|->|) or scoped variable declarations, that we consider to be useful enough and simple enough that they do not hamper the analysis of the language, while departing from the original program.
+    \item The front-end parser for the language is rather limited, only supporting ANSI C with some GNU and MSVC extensions. While this is understandable when considering the age of the tool, it stands in contrast with Clava, which is able to use Clang's frontend tooling to support codes written not only in C, but also C++ and OpenCL, evolving to support more recent features of the language as Clang evolves to support them too.
+    \item When implementing further transformations, CIL requires them to be written using a limited interface based on OCaml and using only a visitor pattern. In contrast, the LARA environment that Clava uses allows full access, including imperative modification if needed, to the program's AST, using a widely-used host language (Javascript).
+    \item While CIL does preliminary analysis to present a unified CFG and AST representation of the program, this needlessly complicates reasoning about program when such analysis is not required. In the Clava standard library, we implement normalization and control-flow analysis separately, improving separation of concerns between these two tasks.
+\end{itemize}
+
+\section{C--: Reduced C-language Subset as Compilation Target}
+
+Another set of authors that historically proposed the use of a reduced subset of C as a language to be used by compilers is Peyton Jones, Ramsey, and Reig, with C-- \cite{Jones1999}.
+
+In their work, the authors identify several limitations encountered by using C as a portable assembly language to be targeted by compiler front-ends for other abstract programming languages. Specifically, they mention the lack of support of continuations, multiple return in registers, control of the stack framing and calling conventions, among other deficiencies as severely limiting to implementing functional languages like Haskell, ML, or Scheme.
+
+To solve this issue, they propose a language that at first sight looks like a simplified version of C, but is not a proper subset. They define abstractions to control a number of lower-level behaviors, such as precise control over static data layout, and stack-less jumps to implement continuations or perform tail call elimination.
+
+While there is stand-alone value in this approach for its purported use case of providing a portable target to implement high-level languages, though a fair comparison with more recent contributions in IRs \cite{Lattner2004} is warranted, this approach does not meet our particular use case.
+
+With our contribution, our goal is to support an optimization use case for compiler-independent analysis and transformation of C and C++ programs, not programs in other languages. That means that it is more ergonomic to provide a representation that captures a proper subset of our source languages, and we do not feel the need to break the confines of the C and C++ languages as they are specified.
+
+\section{Formally-verified optimization techniques for certified compilers}
+
+In the context of certified compiler implementation, several recent contributions have aimed to implement formally-verified optimizations for the CompCert project:
+
+\begin{itemize}
+    \item Tristan and Leroy, 2009 \cite{Tristan2009} implement and formally verify a Lazy Code Motion optimization pass.
+    \item Barthe et al, 2014 \cite{Barthe2014} contribute a formally-verified middle-end that adopts an SSA-form intermediate representation, which simplifies the implementation of further optimizations.
+\end{itemize}
+
+These two contributions have in common the use of a combined technique for implementing verified compilers. Specifically, the respective authors follow a process where they implement the optimization pass using an unverified algorithm, for performance purposes, and introduce a subsequent verification pass where a formally-verified validator program checks the correctness of the transformation.
+
+Another contribution in this space is a formally-verified implementation of a global common sub-expression elimination and loop-invariant code motion pass \cite{Monniaux2021}.
+
+These contributions prove that, with enough effort, it might be possible to formally verify and implement a large breadth of optimization techniques, but several concerns remain unaddressed:
+
+\begin{itemize}
+    \item The optimization work is still tied to a specific compiler. This aspect is exacerbated by the consideration that other compilers' models might not be formally specified or validated to the same extent, and that the presence of differing abstractions between compilers will now entail not only the need to adapt the implementation, but also the validation step.
+    \item Although we consider these contributions a good first step in proving that it is possible for certified compilers to be enhanced in their optimization abilities, there are other reasons that might impede their modification by users and researchers, such as their being proprietary or other impeding circumstances.
+    \item In some cases, namely during prototyping work, it might be desirable to work with a single, high-level abstraction, whereas the process of verification necessitates multiple, more detailed formal constructs.
+\end{itemize}
+
+For this reason, we consider that the use of source-to-source compilation, followed by the use of a certified compiler for the final compilation step, might be a good middle-of-the-road alternative to provide a degree of safety and simultaneously allow for research into new optimization techniques.
+
+\section{Summary}
+
+In this chapter we have given an overview of recent related contributions to our work. We found that there have been efforts in providing more flexibility to IR-based approaches and in formally-verifying optimization passes for certified compilers.
+
+We reached the conclusion that there is space to push further with a source-to-source compilation approach to analysis and transformation, which we detail in Chapter ~\ref{chap:gen_approach}.

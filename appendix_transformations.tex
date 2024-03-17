@@ -1,0 +1,39 @@
+\chapter{Implemented Transformations}
+
+\renewcommand{\arraystretch}{1.5}
+\begin{table}[]
+\begin{tabular}{| p{0.28\linewidth} | p{0.78\linewidth} |}
+\hline
+\multicolumn{2}{| c |}{Standalone Code Transformations (\textit{\href{https://github.com/specs-feup/clava/tree/275e87bacf9cf82fbfcf4bbb39ae5c3ae4071676/ClavaLaraApi/src-lara-clava/clava/clava/code}{clava.code}})} \\
+\hline
+Transformation Name & Description \\
+\hline
+DoToWhileStmt & Transforms do statements into a iteration and a while statement. \\
+ForToWhileStmt & Transforms for statements into a scope containing the initial statement and a while statement containing the body and the step statement. \\
+Inliner & Inlines expression statements containing calls or assignments to calls, or recursively inlines a tree of functions and their calls. \\
+RemoveShadowing & Removes shadowing between variables in inner scopes of a function. \\
+SimplifyAssignment & Transforms compound assignments into simple assignments. \\
+SimplifyTernaryOp & Transforms a ternary operator into an if statement. \\
+StatementDecomposer & Recursively decomposes expressions into its components. Added support for ternary statements and unary decrement and increment operators. \\
+SingleReturnFunction & Removes multiple returns in a function by introducing unconditional jumps to a dedicated return section in the function. Contained in package \textit{clava.pass}. \\
+\hline
+\multicolumn{2}{| c |}{Code Transformation Passes (\textit{\href{https://github.com/specs-feup/clava/tree/275e87bacf9cf82fbfcf4bbb39ae5c3ae4071676/ClavaLaraApi/src-lara-clava/clava/clava/pass}{clava.pass}})} \\
+\hline
+Transformation Name & Description \\
+\hline
+DecomposeDeclStmt & Separates all variable declarations from their initialization. \\
+DecomposeVarDeclarations & Separates all declarations of multiple variables into distinct statements. Authored by Dr. João Bispo. \\
+SimplifyLoops & Transforms all iteration statements into while statements, decomposing the loop condition. \\
+SimplifySelectionStmts & Decomposes the conditions of all if statements. \\
+\hline
+\multicolumn{2}{| c |}{Automated Transformations (\textit{\href{https://github.com/specs-feup/clava/tree/275e87bacf9cf82fbfcf4bbb39ae5c3ae4071676/ClavaLaraApi/src-lara-clava/clava/clava/opt}{clava.opt}})} \\
+\hline
+Transformation Name & Description \\
+\hline
+NormalizeToSubset & Applies all normalization transformations in order. \\
+Inlining & Based on a simple heuristic, automatically inline calls within the program. \\
+\hline
+\end{tabular}
+\linebreak
+\caption{Transformations that were developed for the dissertation, grouped by package.}
+\end{table}

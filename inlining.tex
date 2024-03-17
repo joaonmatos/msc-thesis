@@ -1,0 +1,257 @@
+\chapter{Case Study: Source-to-source function inlining and enabling effects of normalization}\label{chap:inlining}
+
+\section{Inlining as a concept}
+
+Function inlining is an optimization that substitutes a call to another procedure for the body of that very same procedure. For example, take the following code example, which uses a helper function to calculate the offset to take into a linear buffer corresponding to a matrix:
+
+\begin{lstlisting}
+size_t matrix_offset(size_t n_cols, size_t row, size_t col)
+{
+    return n_cols * row + col;
+}
+
+// size_t n_rows;
+// size_t n_cols;
+
+for (size_t i = 0; i < n_rows; i++)
+{
+    for (size_t j = 0; j < n_cols; j++)
+    {
+        size_t offset = matrix_offset(n_cols, i, j);
+        // do something with the offset
+    }
+}
+\end{lstlisting}
+
+If targeting an imaginary stack machine, but one where local variables can be stored in unlimited virtual registers, a naive translation of this code would yield machine code like:
+
+\begin{lstlisting}
+procedure matrix_offset:
+  pop r0 // n_cols
+  pop r1 // row
+  pop r2 // col
+  pop r4 // return address
+  
+  r5 = r0 * r1 // temporary, row offset
+  r6 = r5 + r2
+  
+  push r6
+  jmp r4
+end procedure
+
+procedure main
+  // r0 is n_rows
+  // r1 is n_cols
+  
+  r2 = 0 // i
+label loop_1
+  jmp_gt_eq r2, r0, end_loop_1
+  
+  r3 = 0 // j
+label loop_2
+  jmp_gt_eq r3, r1, end_loop_2
+  
+  push offset_return
+  push r3
+  push r2
+  push r1
+  jmp matrix_offset
+label offset_return:
+  pop r4 // offset
+  
+  // ... do something with r4
+  
+  r3 = r3 + 1
+  jmp loop2
+label end_loop2
+
+  r2 = r2 + 1
+  jmp loop1
+label end_loop1
+end procedure
+\end{lstlisting}
+
+From this listing, one can see already one of the overheads associated with function calls. Depending on the calling convention, the system must perform extra copies of the arguments that are used to pass into the called procedure, either storing them in the stack (main memory) or in specific registers. Furthermore, if the architecture of the system does not allow an unlimited number of registers, it must save any other relevant values stored in the registers to memory, to prevent them being modified by the called procedure. Finally, the two procedures can be located in very disparate parts of memory, so performance may suffer because of decreased colocality on memory.
+
+Let us now consider the same code processed by an inlining step, followed by some basic copy elision for clarity's sake, yielding the following code:
+
+\begin{lstlisting}
+procedure main
+  // r0 is n_rows
+  // r1 is n_cols
+  
+  r2 = 0 // i
+label loop_1
+  jmp_gt_eq r2, r0, end_loop_1
+  
+  r3 = 0 // j
+label loop_2
+  jmp_gt_eq r3, r1, end_loop_2
+  
+  r4 = r1 * r2 // temporary, row_offset = n_cols * i
+  r5 = r4 + r3 // offset
+  
+  // ... do something with r5
+  
+  r3 = r3 + 1
+  jmp loop2
+label end_loop2
+
+  r2 = r2 + 1
+  jmp loop1
+label end_loop1
+end procedure
+\end{lstlisting}
+
+Several aspects here are improved. Firstly, there ceases to be a need for branching into remote code locations, which, coupled by the increased code locality, might decrease the CPU stalling associated to instruction cache misses and branch mispredictions. Secondly, access to the data memory is reduced. On our abstract machine stack access is completely eliminated, since the function parameters can be set by copying parameters to new registers (these copies were later elided for code clarity, but nevertheless access to them would be more performant than performing reads and writes to memory), but even in machines where the number of registers is limited, this inlining may be beneficial because of reduced stack spilling of registers during register allocation. Finally, having full access to the code of the called procedure could enable further optimizations. For example, now that a global analysis of the main function can see that the matrix offset computation is actually constituted by a loop-invariant row offset computation and a loop-variant addition, it could hoist the first part of the computation to the outer loop.
+
+\section{Inlining in a source-to-source context}
+
+Conceptually speaking, inlining should be a relatively simple operation. The compiler must take the text of the called function, replace the call with said text, adjust references to the arguments of the function to point to the parameters passed into the call, and store the resulting expression, if it gets used in the called context. Indeed, in the example presented in the previous section, that can be quite easily done. One must only assign to the lvalue of the call the expression contained in the return statement, and replace the arguments of the function declaration with those of the call:
+
+\begin{lstlisting}
+size_t matrix_offset(size_t n_cols, size_t row, size_t col)
+{
+    return n_cols * row + col;
+}
+
+// ... size_t n_cols, i, j;
+size_t offset = matrix_offset(n_cols, row, col);
+// becomes
+size_t offset = n_cols * i + j;
+\end{lstlisting}
+
+However, in the general case, high-level languages such as C and C++ do not exhibit a strict separation between assignment expressions, side-effects and control flow, and syntax for statements and expressions is not perfectly composable, so there are many factors that will impede this straight-forward implementation of inlining. In the course of this section, we present several factors that impede this implementation, and how the normalization process described in Chapter \ref{chap:subset} or further transformations might enable implementing this transformation in an increased number of situations.
+
+\subsection{References to caller lvalues and mutation of function parameters}
+
+The first aspect that we must take into consideration is the fact that C and C++ function calls provide their parameters by value. This means that a function can modify the value of its parameters, without modifying said values on the caller's end.
+
+The concrete implication this has for our inlining transformation is that we must copy all call arguments and reference those copies in the inlined function code, as opposed to directly referencing the parameter values. If there is a significant performance impact stemming from these copies, we could implement a copy elision step afterwards, to remove unneeded duplication.
+
+\subsection{Calls contained in compound expressions and statement headers}
+
+The second aspect we consider is that, in C and C++, function calls can be nested in contexts where the text of the function (which can be comprised of several statements, including declarations and control flow statements) cannot be inlined in a way that is syntactically valid, such as where the language only allows expressions to be placed, like in compound expressions and in selection or iteration statement headers.
+
+However, calls as an expression statement, and assignment from the return value of a call to an lvalue, in the context of a scope, can always be inlined, by inlining the text of the called function and, if the return is not void, assigning the would-be returned expression to the left hand side of the original assignment.
+
+Taking into this consideration, we can consider that the transformations detailed in Section \ref{sec:subset-expressions} enable us to perform inlining in more cases, by extracting expression evaluation from statement headers, and decomposing expressions into simpler expressions that will end up reduced to the trivially supported cases outlined above.
+
+\subsection{Early return statements}
+
+While C and C++ generally feature structured control flow, early return statements allow a function to break that structured flow and jump over executed code. When inlining functions that make use of that ability, the assumption that a return statement can simply be replaced with an assignment to a variable containing the result is no longer valid, an thus impede the straight-forward implementation of inling.
+
+As mentioned in Section \ref{sec:subset-control-flow}, we do not think it wise to remove this facility in general, but, for the inlining of calls to functions that feature early returns, we devised a transformation that would make it so that only a single-return remains: an output variable is declared at the beginning of the function's scope, and a labeled return statement is introduced at the end of the function's text, returning said output variable. Then, all other return statements are replaced with a combination of assignments to the output variable, and unconditional jumps to the labeled return at the end of the function, as shown in Section \ref{sec:inlining-impl}.
+
+\section{Implementation}\label{sec:inlining-impl}
+
+Finally, having discussed these conditions and after applying transformations to normalize the program to our language subset, we are able to implement a transformation to inline function calls.
+
+First, we must ensure two pre-conditions:
+
+\begin{itemize}
+    \item The call in question is either a top-level expression statement within a scope, or is the right side of a top-level assignment expression statement. This is ensured by the normalization process we applied beforehand.
+    \item The inlined function does not access variables which the caller cannot access (e.g. the function and the caller are in different translation units and the function accesses global variables that use internal linkage, or a C++ class's member or friend function accesses private fields of the class and is called in an external context). We are not currently verifying this condition, as we do not think it necessary for a prototypical implementation, so the calls to be inlined must be chosen with care.
+\end{itemize}
+
+Then, to ensure that the function is able to be inlined, we apply two preliminary transformations to it: we transform the function, as described before, to ensure that only a single return statement is made, at the end of the function's text. Then, we process the variable names to ensure that there is no shadowing. This ensures that further transformations based on variable names do not need to handle possible variable shadowing.
+
+Finally, we are able to perform the transformation, in source form, through the following steps:
+
+\begin{enumerate}
+    \item Replace the call or assignment in the caller with an empty scope.
+    \item Insert variable declarations corresponding to the function's arguments, and assign the value of the call's arguments to those variables.
+    \item Copy over the nodes corresponding to the function's body.
+    \item If the function returns a value, and the caller assigned the value of the call to a variable, replace the return statement with an assignment, whose left hand side is the caller's result variable and the right hand side is the function's return expression.
+    \item Rename any variable that needs it to ensure that the naming does not conflict with the caller's variables.
+\end{enumerate}
+
+To provide a concrete example, in the following code:
+
+\begin{lstlisting}
+int *get_elem(int *slice, size_t size, size_t offset)
+{
+    if (offset >= size)
+    {
+        return NULL;
+    }
+
+    return slice + offset;
+}
+
+// int *slice;
+// size_t size;
+// size_t i;
+
+int *elem = get_elem(slice, size, i);
+}
+\end{lstlisting}
+
+Firstly, the normalization occurs:
+
+\begin{lstlisting}
+int * get_elem(int *slice, size_t size, size_t offset) {
+   int decomp_1;
+   decomp_1 = offset >= size;
+   if(decomp_1) {
+      
+      return ((void *) 0);
+   }
+   
+   return slice + offset;
+}
+
+// int * slice;
+// size_t size;
+// size_t i;
+int *elem;
+elem = get_elem(slice, size, i);
+\end{lstlisting}
+
+Then, the function \verb|get_elem| is prepared to be inlined:
+
+\begin{lstlisting}
+int * get_elem(int *slice, size_t size, size_t offset) {
+   int *__return_value;
+   int decomp_1;
+   decomp_1 = offset >= size;
+   if(decomp_1) {
+      __return_value = ((void *) 0);
+      goto __return_label;
+   }
+   __return_value = slice + offset;
+   goto __return_label;
+   __return_label:
+   
+   return __return_value;
+}
+\end{lstlisting}
+
+Note that the non-structured control flow is made explicit and only a single return statement remains. Finally, the inlining is able to be carried out:
+
+\begin{lstlisting}
+int * get_elem(int *slice, size_t size, size_t offset) { /* ... */ }
+
+// int * slice;
+// size_t size;
+// size_t i;
+int *elem;
+{
+    int * __inline_0_slice = slice;
+    size_t __inline_0_size = size;
+    size_t __inline_0_offset = i;
+    int *__inline_0___return_value;
+    int __inline_0_decomp_1;
+    __inline_0_decomp_1 = __inline_0_offset >= __inline_0_size;
+    if(__inline_0_decomp_1) {
+       __inline_0___return_value = ((void *) 0);
+       goto __return_label;
+    }
+    __inline_0___return_value = __inline_0_slice + __inline_0_offset;
+    goto __return_label;
+    __return_label:
+    elem = __inline_0___return_value;
+ }
+\end{lstlisting}
+
+This transformation was implemented in an Inliner class, available on the Clava standard library, through the methods \verb|inline($exprStmt)|, which inlines a single call, and \linebreak \verb|inlineFunctionTree($function)|, which recursively inlines all calls made in a function, as well as in the functions that are called.

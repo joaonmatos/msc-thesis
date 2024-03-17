@@ -1,0 +1,39 @@
+\chapter{Conclusions}\label{chap:conclusions}
+
+When considering conclusions, we think that our work can be considered in several different facets. We first considered our literature review work, followed by work of theorizing a language subset that would meet our criteria. Then we considered the implementation of our normalization work and its results, and finally considered our case study in organization.
+
+Regarding our survey of relevant literature, we consider that we were largely successful in identifying the breadth of approaches that are currently being investigated or implemented to tame the complexity of optimization work, even if not at great depth. We think that our survey of approaches tailored towards more heterogeneous systems could have had more depth, but then again the lack of surveys in this area, coupled with more practical goals, did not allow further exploration. Nevertheless, we identified many limitations that guided the research questions and ultimately our proposed solution and contributions.
+
+We think that our main contribution was establishing a suitable theoretical framework for building a subtractive subset of C and C++, especially considering the sheer breadth and depth of constructs of these high-level languages. We think that the principles that we identified will be foundational and useful when applying this exercise to other languages and scenarios and, even if the subset that we derived was by no means exhaustive or perfectly adequate, it will surely serve as a good first draft to keep iterating on a better C or C++ subset that could be targeted by source-to-source compiler users to perform analyses and transformations. Generally speaking, we think we were successful in meeting our objectives along this facet.
+
+Our case study on function inlining also produced successful results. Our normalization pass was able to enhance the action of pre-existing and newly implemented inlining transformations and we observed promising performance results when benchmarking the effect of inlining on the runtime duration of sample programs.
+
+Our experiment to evaluate our normalization pass's interaction with other optimizations was not so successful. Besides having trouble reproducing work by earlier authors, we neutered the performance effect of their contributions with our transformation. This is a disappointing result, but allowed us to understand some limitations of the subset we have currently defined, and will surely guide a future version of the subset that will be able to avoid those problems.
+
+\section{Contributions}
+
+On a more exhaustive note, we think that we were able to present several contributions along diffent axes:
+
+\begin{itemize}
+    \item Producing a high-level survey of different approaches for taming the complexity of high-level languages, with the aim of making them more amenable for analyses and transformations, and heterogeneous compilation targets, such as mid-level IRs, multi-level IRs, declarative transformations, and discussion of their limitations and tradeoffs, \textit{viz.} in comparison with source-to-source compilation approaches.
+    \item Adopting a structure for source-code transformations in Lara and Clava, especially for the use case of automated transformation, as was the case of the Pass abstraction, common in other compilers but previously unused in our immediate context.
+    \item Adopting a set of principles that could guide the production of an analysis-friendly subset of an imperative programming language.
+    \item Implementing a suite of automated transformations that could transform a large subset of C programs and simpler C++ programs into a normalized subset of the language that was more amenable for source code transformation.
+    \item Discussing the challenges present in designing a code inlining transformation in a source-to-source compilation context.
+    \item Producing a simple, yet effective code inlining transformation that leverages the aforementioned normalization pass.
+    \item Practical evaluation experiments and results that highlight the advantages and deffects of our implementation, as well as some tradeoffs of our approach.
+\end{itemize}
+
+\section{Future Work}
+
+There are some limitations in our work that could be addressed in the future:
+
+\begin{itemize}
+    \item Having co-developed our theoretical framework for normalization and our implementation of such transformation, there are several mismatches between what the framework demands, the specification we derived, and the implementation we built, that produce less than ideal results in terms of readability, program correctness and expressiveness. Further work is needed to bring these factors into alignment. Specifically, we would like to see further work on loop constructs and loop normalization, a more balanced approach to implementing complex expression decomposition (our implementation was particularly overzealous), and deriving more elements of the subset covering aspects that were not considered in the interest of keeping a narrow scope, such as C++ specific constructs such as classes, visibility and templates, atomics, or static and thread local storage.
+    \item Further work is needed to validate the compatibility of our normalization with other programs, other compiler toolchains, other computing platforms and models, and so on. The same can be said for our inlining implementation.
+    \item The Pass abstraction that was introduced to the LARA framework was a step forward in organizing successive code transformations in a declarative way. However, further work is still needed, especially investigating the possibility of doing automatic dependency resolution between passes, as well as checking desirable properties of transformation passes, such as idempotency.
+    \item On Clava, further work can be done to integrate other alternative approaches and representation besides high-level languages. With the emergence of MLIR as a standard for interoperable IRs, it could be interesting to try to integrate the two approaches, especially as an alternative to the C++ and visitor-based extension patterns of that technology.
+    \item The implementation itself needs further maintenance and improvement work. We would like to see work on other ways of improving ergonomics of Clava users, including access to more modern aspects of the Javascript environment, such as ES Modules and gradual typing with Typescript, DSLs for testing, integration with common Integrated Development Environments (IDEs) and protocols such as VSCode, IntelliJ and the Language Server Protocol, as well as an easier building and installation story. 
+\end{itemize}
+
+We again express our hope that this work can be a foundation for another avenue of exploration within the compiler research world, and that other developers will be excited to work on successors to, and competitors of, this project. Compiler research deserves to be a topic that is approachable by all kinds of engineers, students and scientists, and we believe that transitioning to models that allow both high-level work and focused work on different layers of abstraction to be easier to work with is of foremost importance.
